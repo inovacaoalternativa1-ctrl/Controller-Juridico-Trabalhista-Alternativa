@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LexControl — Processos Trabalhistas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ─── Reset & Tokens ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:       #0f0f0e;
+  --ink2:      #3d3c38;
+  --ink3:      #7a7870;
+  --paper:     #faf9f6;
+  --paper2:    #f2f0eb;
+  --paper3:    #e8e5dd;
+  --line:      rgba(15,15,14,.10);
+  --line2:     rgba(15,15,14,.18);
+  --accent:    #1a4fd6;
+  --accent-lt: #e8eefb;
+  --ok:        #166534;
+  --ok-lt:     #dcfce7;
+  --warn:      #92400e;
+  --warn-lt:   #fef3c7;
+  --danger:    #991b1b;
+  --danger-lt: #fee2e2;
+  --purple:    #4f1d96;
+  --purple-lt: #ede9fe;
+  --r4: 4px; --r8: 8px; --r12: 12px; --r16: 16px;
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f0ede6; --ink2: #b4b2a9; --ink3: #6b6960;
+    --paper: #141413; --paper2: #1c1c1a; --paper3: #252522;
+    --line: rgba(255,255,255,.08); --line2: rgba(255,255,255,.14);
+    --accent: #4d7dff; --accent-lt: #1a2444;
+    --ok: #4ade80; --ok-lt: #052e16;
+    --warn: #fbbf24; --warn-lt: #1c1007;
+    --danger: #f87171; --danger-lt: #1f0707;
+    --purple: #a78bfa; --purple-lt: #1e1033;
+    --shadow: 0 1px 3px rgba(0,0,0,.3); --shadow-md: 0 4px 12px rgba(0,0,0,.4);
+  }
+}
+
+body {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background: var(--paper2);
+  color: var(--ink);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ─── Layout ─── */
+.app { display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.logo {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.logo-mark {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--ink);
+  letter-spacing: -.3px;
+}
+.logo-mark span { color: var(--accent); }
+.logo-sub { font-size: 11px; color: var(--ink3); margin-top: 2px; }
+
+.nav { padding: 12px 10px; flex: 1; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r8);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink2);
+  transition: background .12s, color .12s;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+.nav-item:hover { background: var(--paper2); color: var(--ink); }
+.nav-item.active { background: var(--accent-lt); color: var(--accent); font-weight: 500; }
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto;
+  background: var(--paper3);
+  color: var(--ink3);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.nav-item.active .nav-badge { background: var(--accent); color: #fff; }
+
+.sidebar-footer {
+  padding: 12px 10px;
+  border-top: 1px solid var(--line);
+}
+.sidebar-footer p { font-size: 11px; color: var(--ink3); padding: 4px 10px; }
+
+/* Main */
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  padding: 0 28px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.page-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+.content { padding: 28px; flex: 1; }
+
+/* ─── Panels ─── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ─── Components ─── */
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; font-size: 13px; font-weight: 500;
+  border-radius: var(--r8); cursor: pointer;
+  border: 1px solid var(--line2);
+  background: var(--paper); color: var(--ink);
+  font-family: inherit; transition: all .12s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--paper2); border-color: var(--line2); }
+.btn:active { transform: scale(.98); }
+.btn svg { width: 14px; height: 14px; }
+.btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
+.btn-primary:hover { background: #1640b0; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-ghost { border-color: transparent; background: transparent; }
+.btn-ghost:hover { background: var(--paper2); }
+.btn-danger { color: var(--danger); }
+.btn-danger:hover { background: var(--danger-lt); border-color: transparent; }
+
+/* Cards */
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r12);
+  box-shadow: var(--shadow);
+}
+.card-pad { padding: 20px; }
+.card + .card { margin-top: 12px; }
+
+/* Badges */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 100px;
+  font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.badge-blue   { background: var(--accent-lt); color: var(--accent); }
+.badge-green  { background: var(--ok-lt);     color: var(--ok); }
+.badge-amber  { background: var(--warn-lt);   color: var(--warn); }
+.badge-red    { background: var(--danger-lt); color: var(--danger); }
+.badge-purple { background: var(--purple-lt); color: var(--purple); }
+.badge-gray   { background: var(--paper3);   color: var(--ink2); }
+
+/* fase → badge */
+.fase-Inicial    { background: var(--paper3); color: var(--ink2); }
+.fase-Instrução  { background: var(--accent-lt); color: var(--accent); }
+.fase-Sentença   { background: var(--ok-lt); color: var(--ok); }
+.fase-Recurso    { background: var(--warn-lt); color: var(--warn); }
+.fase-Execução   { background: var(--danger-lt); color: var(--danger); }
+
+/* Metric cards */
+.metric-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 20px; }
+.metric-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r12);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.metric-label { font-size: 11px; color: var(--ink3); font-weight: 500; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.metric-value { font-size: 28px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: var(--ink); line-height: 1; }
+.metric-sub   { font-size: 11px; color: var(--ink3); margin-top: 4px; }
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--line2);
+  border-radius: var(--r12);
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--paper);
+}
+.drop-zone:hover, .drop-zone.drag { border-color: var(--accent); background: var(--accent-lt); }
+.drop-icon { width: 40px; height: 40px; margin: 0 auto 12px; color: var(--ink3); }
+.drop-zone:hover .drop-icon, .drop-zone.drag .drop-icon { color: var(--accent); }
+.drop-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+.drop-sub   { font-size: 13px; color: var(--ink3); }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  text-align: left; padding: 10px 14px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--ink3); border-bottom: 1px solid var(--line2);
+  background: var(--paper2); white-space: nowrap;
+}
+thead th:first-child { border-radius: var(--r8) 0 0 0; }
+thead th:last-child  { border-radius: 0 var(--r8) 0 0; }
+tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr { transition: background .08s; }
+tbody tr:hover td { background: var(--paper2); }
+.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+
+/* Empty state */
+.empty-state {
+  text-align: center; padding: 64px 24px;
+  color: var(--ink3);
+}
+.empty-icon { width: 48px; height: 48px; margin: 0 auto 14px; opacity: .35; }
+.empty-title { font-size: 15px; font-weight: 500; color: var(--ink2); margin-bottom: 6px; }
+.empty-sub   { font-size: 13px; }
+
+/* Progress */
+.progress-bar { height: 3px; background: var(--paper3); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .25s; }
+
+/* Spinner */
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--line2); border-top-color: var(--accent);
+  animation: spin .6s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modal */
+.overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(10,10,8,.5); z-index: 200;
+  align-items: center; justify-content: center;
+  padding: 16px;
+}
+.overlay.open { display: flex; }
+.modal {
+  background: var(--paper);
+  border-radius: var(--r16);
+  box-shadow: var(--shadow-md);
+  width: 100%; max-width: 560px;
+  max-height: 88vh; overflow-y: auto;
+  border: 1px solid var(--line);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--line);
+}
+.modal-title { font-size: 15px; font-weight: 600; }
+.modal-body  { padding: 20px 24px; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Form */
+.field { margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field > label { display: block; font-size: 12px; font-weight: 500; color: var(--ink2); margin-bottom: 5px; }
+.field input, .field select {
+  width: 100%; padding: 8px 10px; font-size: 13px;
+  border: 1px solid var(--line2); border-radius: var(--r8);
+  background: var(--paper2); color: var(--ink);
+  font-family: inherit; transition: border-color .12s;
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--accent); background: var(--paper); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-section { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--ink3); margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+
+/* Toast */
+.toast-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--ink); color: var(--paper);
+  padding: 10px 16px; border-radius: var(--r8);
+  font-size: 13px; display: flex; align-items: center; gap: 8px;
+  box-shadow: var(--shadow-md);
+  animation: slideIn .2s ease;
+  max-width: 320px;
+}
+.toast.success { background: #166534; }
+.toast.error   { background: var(--danger); }
+@keyframes slideIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+/* Preview card (after extraction) */
+.preview-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r12);
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* Schedule items */
+.schedule-item {
+  display: flex; gap: 16px;
+  padding: 14px 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r12);
+  margin-bottom: 8px;
+  transition: box-shadow .12s;
+}
+.schedule-item:hover { box-shadow: var(--shadow-md); }
+.schedule-item.past  { opacity: .5; }
+.schedule-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 5px;
+}
+.schedule-dot.audiencia { background: var(--accent); }
+.schedule-dot.pericia   { background: var(--purple); }
+
+/* Charts section */
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.chart-wrap  { position: relative; width: 100%; }
+
+/* Section header */
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.section-title  { font-size: 15px; font-weight: 600; }
+
+/* Search input */
+.search-wrap { position: relative; }
+.search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--ink3); pointer-events: none; }
+.search-input { padding: 7px 10px 7px 30px; font-size: 13px; border: 1px solid var(--line2); border-radius: var(--r8); background: var(--paper2); color: var(--ink); font-family: inherit; width: 240px; transition: border-color .12s; }
+.search-input:focus { outline: none; border-color: var(--accent); background: var(--paper); }
+
+/* Status indicator */
+.status-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--accent-lt); border: 1px solid rgba(26,79,214,.15);
+  border-radius: var(--r8); padding: 10px 14px; margin-bottom: 16px;
+  font-size: 13px; color: var(--accent);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .metric-row { grid-template-columns: repeat(2,1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+  .content { padding: 16px; }
+  .topbar { padding: 0 16px; }
+}
+
+/* Highlight number */
+.num-chip {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  background: var(--paper3);
+  padding: 2px 6px;
+  border-radius: var(--r4);
+  white-space: nowrap;
+}
+
+/* Divider */
+.divider { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+
+/* Tag row */
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─── Sidebar ─── -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">Lex<span>Control</span></div>
+      <div class="logo-sub">Gestão de Processos</div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" onclick="goTo('import',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+        Importar PDF
+      </button>
+      <button class="nav-item" onclick="goTo('list',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+        Processos
+        <span class="nav-badge" id="nb-list">0</span>
+      </button>
+      <button class="nav-item" onclick="goTo('dashboard',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" onclick="goTo('agenda',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+        Agenda
+        <span class="nav-badge" id="nb-agenda">0</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <p>v2.0 — dados locais</p>
+    </div>
+  </aside>
+
+  <!-- ─── Main ─── -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <span class="page-title" id="page-title">Importar processo</span>
+      <div class="topbar-actions">
+        <button class="btn btn-sm" onclick="exportExcel()">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+          Exportar Excel
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="openAdd()">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Novo processo
+        </button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- ─── IMPORTAR ─── -->
+      <div id="panel-import" class="panel active">
+        <div class="drop-zone" id="dropZone"
+          onclick="document.getElementById('fileIn').click()"
+          ondragover="onDragOver(event)" ondragleave="onDragLeave()" ondrop="onDrop(event)">
+          <svg class="drop-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+          </svg>
+          <div class="drop-title">Arraste o PDF aqui ou clique para selecionar</div>
+          <div class="drop-sub">Aceita PDFs do PJe-JT — pode importar vários de uma vez</div>
+        </div>
+        <input type="file" id="fileIn" accept=".pdf" multiple style="display:none" onchange="handleFiles(this.files)">
+
+        <div id="extract-status" style="display:none; margin-top:14px;">
+          <div class="status-bar">
+            <div class="spinner"></div>
+            <span id="extract-msg">Processando…</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" id="pbar" style="width:0%"></div></div>
+        </div>
+
+        <div id="preview-area" style="margin-top:16px"></div>
+
+        <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--line);">
+          <p style="font-size:12px; color:var(--ink3); margin-bottom:12px;">Não tem PDF em mãos? Adicione os dados manualmente.</p>
+          <button class="btn" onclick="openAdd()">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+            Adicionar manualmente
+          </button>
+        </div>
+      </div>
+
+      <!-- ─── LISTA ─── -->
+      <div id="panel-list" class="panel">
+        <div class="section-header">
+          <span class="section-title">Processos cadastrados</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="search-wrap">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+              <input class="search-input" id="search-input" placeholder="Buscar número, empresa…" oninput="renderList()">
+            </div>
+            <select id="filter-fase" onchange="renderList()" style="padding:7px 10px;font-size:13px;border:1px solid var(--line2);border-radius:var(--r8);background:var(--paper2);color:var(--ink);font-family:inherit">
+              <option value="">Todas as fases</option>
+              <option>Inicial</option><option>Instrução</option><option>Sentença</option><option>Recurso</option><option>Execução</option>
+            </select>
+          </div>
+        </div>
+        <div class="card">
+          <div id="list-body">
+            <div class="empty-state">
+              <svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z"/></svg>
+              <div class="empty-title">Nenhum processo ainda</div>
+              <div class="empty-sub">Importe um PDF ou adicione manualmente</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── DASHBOARD ─── -->
+      <div id="panel-dashboard" class="panel">
+        <div class="metric-row">
+          <div class="metric-card">
+            <div class="metric-label">Total</div>
+            <div class="metric-value" id="m-total">0</div>
+            <div class="metric-sub">processos</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Audiências futuras</div>
+            <div class="metric-value" id="m-aud">0</div>
+            <div class="metric-sub">agendadas</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Perícias</div>
+            <div class="metric-value" id="m-per">0</div>
+            <div class="metric-sub">ativas ou pendentes</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Em recurso</div>
+            <div class="metric-value" id="m-rec">0</div>
+            <div class="metric-sub">processos</div>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="card card-pad">
+            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:14px">Fase processual</div>
+            <div class="chart-wrap" style="height:200px"><canvas id="cFase" role="img" aria-label="Processos por fase">Distribuição por fase.</canvas></div>
+          </div>
+          <div class="card card-pad">
+            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:14px">Audiências por empresa</div>
+            <div class="chart-wrap" style="height:200px"><canvas id="cEmpresa" role="img" aria-label="Audiências por empresa">Audiências agrupadas por empresa.</canvas></div>
+          </div>
+        </div>
+        <div class="card card-pad">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:14px">Audiências por mês</div>
+          <div class="chart-wrap" style="height:200px"><canvas id="cMes" role="img" aria-label="Audiências por mês">Distribuição mensal.</canvas></div>
+        </div>
+      </div>
+
+      <!-- ─── AGENDA ─── -->
+      <div id="panel-agenda" class="panel">
+        <div class="section-header">
+          <span class="section-title">Agenda</span>
+          <select id="agenda-filter" onchange="renderAgenda()" style="padding:7px 10px;font-size:13px;border:1px solid var(--line2);border-radius:var(--r8);background:var(--paper2);color:var(--ink);font-family:inherit">
+            <option value="">Todos os eventos</option>
+            <option value="aud">Apenas audiências</option>
+            <option value="per">Apenas perícias</option>
+            <option value="fut">Somente futuros</option>
+          </select>
+        </div>
+        <div id="agenda-body">
+          <div class="empty-state">
+            <svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+            <div class="empty-title">Nenhum evento cadastrado</div>
+            <div class="empty-sub">As audiências e perícias extraídas dos PDFs aparecerão aqui</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ─── Modal ─── -->
+<div class="overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Novo processo</span>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()" aria-label="Fechar">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveModal()">Salvar processo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast container ─── -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+'use strict';
+
+/* ─── PDF.js worker ─── */
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+/* ─── State ─── */
+var DB = [];
+var editIdx = -1;
+var charts = {};
+var pageTitles = { import:'Importar processo', list:'Processos', dashboard:'Dashboard', agenda:'Agenda' };
+
+try { DB = JSON.parse(localStorage.getItem('lx2_db') || '[]'); } catch(e) { DB = []; }
+function persist() { try { localStorage.setItem('lx2_db', JSON.stringify(DB)); } catch(e){} }
+
+/* ─── Toast ─── */
+function showToast(msg, type) {
+  var wrap = document.getElementById('toast-wrap');
+  var el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 3000);
+}
+
+/* ─── Navigation ─── */
+function goTo(name, btn) {
+  document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('panel-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  document.getElementById('page-title').textContent = pageTitles[name] || name;
+  updateBadges();
+  if (name === 'dashboard') renderDashboard();
+  if (name === 'list') renderList();
+  if (name === 'agenda') renderAgenda();
+}
+
+function updateBadges() {
+  document.getElementById('nb-list').textContent = DB.length;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var futEvents = 0;
+  DB.forEach(function(p) {
+    (p.audiencias||[]).forEach(function(a){ if(a.data && parseDate(a.data) >= today) futEvents++; });
+    if(p.pericia && p.pericia.existe && p.pericia.data && parseDate(p.pericia.data) >= today) futEvents++;
+  });
+  document.getElementById('nb-agenda').textContent = futEvents;
+}
+
+/* ─── Drag & Drop ─── */
+function onDragOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('drag'); }
+function onDragLeave() { document.getElementById('dropZone').classList.remove('drag'); }
+function onDrop(e) { e.preventDefault(); onDragLeave(); handleFiles(e.dataTransfer.files); }
+
+/* ─── PDF Extraction (real PDF.js text) ─── */
+async function handleFiles(files) {
+  if (!files || !files.length) return;
+  document.getElementById('extract-status').style.display = 'block';
+  document.getElementById('preview-area').innerHTML = '';
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (f.type !== 'application/pdf') { showToast('Apenas PDFs aceitos: ' + f.name, 'error'); continue; }
+    document.getElementById('extract-msg').textContent = 'Lendo ' + f.name + '…';
+    setProgress(10);
+    try {
+      var text = await extractPdfText(f);
+      setProgress(65);
+      var data = parseProcess(text, f.name);
+      setProgress(95);
+      appendPreview(data);
+    } catch(err) {
+      showToast('Erro ao ler ' + f.name + ': ' + err.message, 'error');
+    }
+    setProgress(100);
+  }
+
+  setTimeout(function(){
+    document.getElementById('extract-status').style.display = 'none';
+    setProgress(0);
+  }, 500);
+  document.getElementById('fileIn').value = '';
+}
+
+function extractPdfText(file) {
+  return new Promise(function(resolve, reject) {
+    var fr = new FileReader();
+    fr.onload = async function(e) {
+      try {
+        if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js não carregado');
+        var pdf = await pdfjsLib.getDocument({ data: new Uint8Array(e.target.result) }).promise;
+        var fullText = '';
+        for (var p = 1; p <= pdf.numPages; p++) {
+          var page = await pdf.getPage(p);
+          var content = await page.getTextContent();
+          var pageText = content.items.map(function(s){ return s.str; }).join(' ');
+          fullText += pageText + '\n';
+        }
+        resolve(fullText);
+      } catch(err) { reject(err); }
+    };
+    fr.onerror = function(){ reject(new Error('Erro de leitura')); };
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+function setProgress(v) { document.getElementById('pbar').style.width = v + '%'; }
+
+/* ─── Process Data Parser ─── */
+function parseProcess(text, filename) {
+  var d = {
+    numero: '', reclamante: '', reclamada: '', vara: '', fase: '',
+    audiencias: [],
+    pericia: { existe: false, data: '', hora: '', local: '', perito: '', realizada: false }
+  };
+
+  /* Número */
+  var m = text.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);
+  if (m) d.numero = m[1];
+
+  /* Reclamante */
+  m = text.match(/RECLAMANTE[:\s]*([^\n\r]{3,60})(?:\n|\r|ADVOGADO|RECLAMADO)/i);
+  if (m) d.reclamante = m[1].trim().replace(/\s+/g,' ').replace(/^[:\s]+/,'');
+
+  /* Reclamada — primeira ocorrência */
+  m = text.match(/RECLAMADO[:\s]*([^\n\r]{3,60})(?:\n|\r|ADVOGADO|PERITO|E OUTROS)/i);
+  if (m) d.reclamada = m[1].trim().replace(/\s+/g,' ').replace(/^[:\s]+/,'');
+
+  /* Vara */
+  m = text.match(/(\d[ªº]\s+VARA DO TRABALHO[^\n\r]{0,40})/i);
+  if (m) d.vara = m[1].trim();
+
+  /* Fase */
+  if (/CumPrSe|CUMPRIMENTO DE SENTEN|liquida\u00e7\u00e3o|homologa/i.test(text))            d.fase = 'Execução';
+  else if (/RECURSO ORDIN\u00c1RIO|contrarraz\u00f5es|E\.TRT|subam os autos ao E\.TRT/i.test(text)) d.fase = 'Recurso';
+  else if (/SENTEN\u00c7A|senten\u00e7a proferida|JULGAR PARCIALMENTE|JULGAR PROCEDENTE/i.test(text)) d.fase = 'Sentença';
+  else if (/per\u00edcia|laudo pericial|ADICIONAL DE INSALUBRIDADE|instru\u00e7\u00e3o/i.test(text))  d.fase = 'Instrução';
+  else d.fase = 'Inicial';
+
+  /* Audiências — regex mais preciso sobre o texto real do PDF */
+  var audSeen = new Set();
+  var reAud = /audi[eê]ncia[^.]{0,180}?(\d{2}\/\d{2}\/\d{4})[^.]{0,60}?(\d{1,2}:\d{2})/gi;
+  var hit;
+  while ((hit = reAud.exec(text)) !== null) {
+    var key = hit[1] + '_' + hit[2];
+    if (!audSeen.has(key)) {
+      audSeen.add(key);
+      var ctx = text.substring(Math.max(0, hit.index - 150), hit.index + 200).toLowerCase();
+      var tipo = 'Audiência';
+      if (/concilia/i.test(ctx))               tipo = 'Audiência de conciliação';
+      else if (/instru/i.test(ctx))            tipo = 'Audiência de instrução';
+      else if (/inicial/i.test(ctx))           tipo = 'Audiência inicial';
+      else if (/\buna\b/i.test(ctx))           tipo = 'Audiência una';
+      else if (/julgamento/i.test(ctx))        tipo = 'Audiência de julgamento';
+      var virtual = /virtual|telepresencial|zoom|meet\.google/i.test(ctx);
+      d.audiencias.push({ data: hit[1], hora: hit[2], tipo: tipo, virtual: virtual });
+    }
+  }
+
+  /* Perícia */
+  if (/per[íi]cia|ADICIONAL DE INSALUBRIDADE/i.test(text)) {
+    d.pericia.existe = true;
+    /* Se laudo já existe → realizada */
+    if (/laudo pericial|laudo sob ID|esclarecimentos ao laudo/i.test(text)) d.pericia.realizada = true;
+    /* Data/hora da realização */
+    var pm = text.match(/(\d{2}\/\d{2}\/\d{4})[^;\n]{0,30}(?:[\u00e0a]s?)\s*(\d{2}:\d{2})[^;\n]{0,80}(?:per[íi]cia|perit)/i)
+           || text.match(/(?:per[íi]cia|perit)[^;\n]{0,80}(\d{2}\/\d{2}\/\d{4})/i);
+    if (pm) { d.pericia.data = pm[1]; if (pm[2]) d.pericia.hora = pm[2]; }
+    /* Perito */
+    var pp = text.match(/cargo d[oa][^.]{0,30}Dr[^\s.]{0,5}[.\s]+([A-ZÁÉÍÓÚ][a-záéíóúâêôãõç]+(?:\s[A-ZÁÉÍÓÚ][a-záéíóúâêôãõç]+){1,5})/);
+    if (pp) d.pericia.perito = pp[1].trim();
+    /* Local */
+    var pl = text.match(/local(?:[^.\n]{0,20}per[íi]cia)[^.\n]{0,80}([A-ZÁÉÍÓÚ][a-záéíóúâêôãõçA-Z]+(?:[,\s][A-Za-záéíóúâêôãõç]+){1,6})/i);
+    if (pl) d.pericia.local = pl[1].trim();
+  }
+
+  return d;
+}
+
+/* ─── Preview ─── */
+function appendPreview(data) {
+  var area = document.getElementById('preview-area');
+  var uid = 'prev_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  var audRows = '';
+  if (data.audiencias.length) {
+    data.audiencias.slice(0, 5).forEach(function(a) {
+      audRows += '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:4px;flex-wrap:wrap">'
+        + '<span style="font-family:\'IBM Plex Mono\',monospace;font-weight:500">' + a.data + '</span>'
+        + '<span style="color:var(--ink3)">às</span>'
+        + '<span style="font-weight:500">' + a.hora + '</span>'
+        + '<span style="color:var(--ink2)">—</span>'
+        + '<span style="color:var(--ink2)">' + a.tipo + '</span>'
+        + '<span class="badge ' + (a.virtual ? 'badge-blue' : 'badge-green') + '">' + (a.virtual ? 'Virtual' : 'Presencial') + '</span>'
+        + '</div>';
+    });
+    if (data.audiencias.length > 5) audRows += '<p style="font-size:11px;color:var(--ink3)">…e mais '+(data.audiencias.length-5)+' audiência(s)</p>';
+  } else {
+    audRows = '<p style="font-size:12px;color:var(--ink3)">Nenhuma audiência detectada — verifique os dados</p>';
+  }
+  var periHtml = '';
+  if (data.pericia.existe) {
+    periHtml = '<div style="margin-top:12px;padding:10px 12px;background:var(--purple-lt);border-radius:var(--r8);font-size:12px">'
+      + '<span style="font-weight:600;color:var(--purple)">Perícia técnica</span>'
+      + (data.pericia.data ? ' <span style="font-family:\'IBM Plex Mono\',monospace;margin-left:8px">' + data.pericia.data + (data.pericia.hora ? ' às '+data.pericia.hora:'') + '</span>' : ' <span style="color:var(--ink3)">data não identificada</span>')
+      + (data.pericia.perito ? ' <span style="color:var(--ink2);margin-left:8px">Perito: '+data.pericia.perito+'</span>' : '')
+      + (data.pericia.realizada ? ' <span class="badge badge-green" style="margin-left:6px">Realizada</span>' : ' <span class="badge badge-amber" style="margin-left:6px">Pendente</span>')
+      + '</div>';
+  }
+
+  var card = document.createElement('div');
+  card.className = 'preview-card';
+  card.id = uid;
+  card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">'
+    + '<div>'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
+    + '<span class="num-chip">' + (data.numero || 'número não encontrado') + '</span>'
+    + '<span class="badge fase-' + data.fase + '">' + data.fase + '</span>'
+    + '</div>'
+    + '<div style="font-size:13px;color:var(--ink2)">'
+    + '<span style="font-weight:500">' + (data.reclamante || '—') + '</span>'
+    + ' <span style="color:var(--ink3)">×</span> '
+    + '<span>' + (data.reclamada || '—') + '</span>'
+    + '</div>'
+    + (data.vara ? '<div style="font-size:11px;color:var(--ink3);margin-top:3px">'+data.vara+'</div>' : '')
+    + '</div>'
+    + '<div style="display:flex;gap:6px">'
+    + '<button class="btn btn-sm" onclick="editPreview(\'' + uid + '\')">Revisar</button>'
+    + '<button class="btn btn-sm" style="color:var(--ink3)" onclick="document.getElementById(\'' + uid + '\').remove()">✕</button>'
+    + '</div></div>'
+    + '<div style="margin-bottom:8px">' + audRows + '</div>'
+    + periHtml
+    + '<div style="margin-top:14px;display:flex;gap:8px">'
+    + '<button class="btn btn-primary btn-sm" onclick="confirmPreview(\'' + uid + '\')">Confirmar e salvar</button>'
+    + '</div>';
+  card.dataset.json = JSON.stringify(data);
+  area.appendChild(card);
+}
+
+function confirmPreview(uid) {
+  var el = document.getElementById(uid);
+  if (!el) return;
+  var d = JSON.parse(el.dataset.json);
+  DB.push(d); persist(); updateBadges();
+  el.remove();
+  showToast('Processo ' + (d.numero || 'adicionado') + ' salvo!', 'success');
+}
+
+function editPreview(uid) {
+  var el = document.getElementById(uid);
+  if (!el) return;
+  var d = JSON.parse(el.dataset.json);
+  editIdx = -2; // special: update preview card on save
+  window._previewEditUid = uid;
+  openModalWith(d);
+}
+
+/* ─── Modal form ─── */
+function openAdd() { editIdx = -1; window._previewEditUid = null; openModalWith(blankProcess()); }
+function editProcess(i) { editIdx = i; window._previewEditUid = null; openModalWith(DB[i]); }
+
+function blankProcess() {
+  return { numero:'', reclamante:'', reclamada:'', vara:'', fase:'Inicial',
+    audiencias:[{data:'',hora:'',tipo:'Audiência inicial',virtual:false}],
+    pericia:{existe:false,data:'',hora:'',local:'',perito:'',realizada:false} };
+}
+
+function openModalWith(d) {
+  document.getElementById('modal-title').textContent = editIdx >= 0 ? 'Editar processo' : 'Novo processo';
+  var a = (d.audiencias && d.audiencias[0]) || {};
+  var fases = ['Inicial','Instrução','Sentença','Recurso','Execução'];
+  var tipos  = ['Audiência inicial','Audiência de conciliação','Audiência de instrução','Audiência una','Audiência de julgamento'];
+
+  document.getElementById('modal-body').innerHTML =
+    '<div class="form-section">Identificação</div>'
+    + '<div class="field"><label>Número do processo</label><input id="fi-num" value="'+(d.numero||'')+'" placeholder="0000000-00.0000.5.00.0000"></div>'
+    + '<div class="grid2"><div class="field"><label>Reclamante</label><input id="fi-rec" value="'+(d.reclamante||'')+'"></div>'
+    + '<div class="field"><label>Reclamada (1ª ré)</label><input id="fi-red" value="'+(d.reclamada||'')+'"></div></div>'
+    + '<div class="grid2"><div class="field"><label>Vara do trabalho</label><input id="fi-vara" value="'+(d.vara||'')+'" placeholder="1ª Vara do Trabalho de…"></div>'
+    + '<div class="field"><label>Fase processual</label><select id="fi-fase">'
+    + fases.map(function(f){ return '<option'+(d.fase===f?' selected':'')+'>'+f+'</option>'; }).join('')
+    + '</select></div></div>'
+
+    + '<div class="form-section">Próxima audiência</div>'
+    + '<div class="grid2"><div class="field"><label>Data</label><input id="fi-aud-data" value="'+(a.data||'')+'" placeholder="DD/MM/AAAA"></div>'
+    + '<div class="field"><label>Hora</label><input id="fi-aud-hora" value="'+(a.hora||'')+'" placeholder="10:30"></div></div>'
+    + '<div class="grid2"><div class="field"><label>Tipo</label><select id="fi-aud-tipo">'
+    + tipos.map(function(t){ return '<option'+(a.tipo===t?' selected':'')+'>'+t+'</option>'; }).join('')
+    + '</select></div>'
+    + '<div class="field"><label>Formato</label><select id="fi-aud-fmt">'
+    + '<option value="0"'+(!a.virtual?' selected':'')+'>Presencial</option>'
+    + '<option value="1"'+(a.virtual?' selected':'')+'>Virtual / Telepresencial</option>'
+    + '</select></div></div>'
+
+    + '<div class="form-section">Perícia técnica</div>'
+    + '<div class="field"><label>Existe perícia neste processo?</label><select id="fi-per-ex" onchange="togglePer()">'
+    + '<option value="0"'+(!d.pericia.existe?' selected':'')+'>Não</option>'
+    + '<option value="1"'+(d.pericia.existe?' selected':'')+'>Sim</option>'
+    + '</select></div>'
+    + '<div id="per-fields" style="display:'+(d.pericia.existe?'block':'none')+'">'
+    + '<div class="grid2"><div class="field"><label>Data da perícia</label><input id="fi-per-data" value="'+(d.pericia.data||'')+'" placeholder="DD/MM/AAAA"></div>'
+    + '<div class="field"><label>Hora</label><input id="fi-per-hora" value="'+(d.pericia.hora||'')+'" placeholder="09:00"></div></div>'
+    + '<div class="field"><label>Perito responsável</label><input id="fi-per-perito" value="'+(d.pericia.perito||'')+'"></div>'
+    + '<div class="field"><label>Local / endereço</label><input id="fi-per-local" value="'+(d.pericia.local||'')+'"></div>'
+    + '<div class="field"><label>Status da perícia</label><select id="fi-per-status">'
+    + '<option value="0"'+(!d.pericia.realizada?' selected':'')+'>Agendada / pendente</option>'
+    + '<option value="1"'+(d.pericia.realizada?' selected':'')+'>Já realizada</option>'
+    + '</select></div></div>';
+
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function togglePer() {
+  document.getElementById('per-fields').style.display =
+    document.getElementById('fi-per-ex').value === '1' ? 'block' : 'none';
+}
+
+function saveModal() {
+  var d = {
+    numero:    (document.getElementById('fi-num').value||'').trim(),
+    reclamante:(document.getElementById('fi-rec').value||'').trim(),
+    reclamada: (document.getElementById('fi-red').value||'').trim(),
+    vara:      (document.getElementById('fi-vara').value||'').trim(),
+    fase:       document.getElementById('fi-fase').value,
+    audiencias: [{
+      data:    (document.getElementById('fi-aud-data').value||'').trim(),
+      hora:    (document.getElementById('fi-aud-hora').value||'').trim(),
+      tipo:     document.getElementById('fi-aud-tipo').value,
+      virtual:  document.getElementById('fi-aud-fmt').value === '1'
+    }],
+    pericia: {
+      existe:   document.getElementById('fi-per-ex').value === '1',
+      data:    (document.getElementById('fi-per-data')  && document.getElementById('fi-per-data').value  || '').trim(),
+      hora:    (document.getElementById('fi-per-hora')  && document.getElementById('fi-per-hora').value  || '').trim(),
+      perito:  (document.getElementById('fi-per-perito')&& document.getElementById('fi-per-perito').value|| '').trim(),
+      local:   (document.getElementById('fi-per-local') && document.getElementById('fi-per-local').value || '').trim(),
+      realizada: document.getElementById('fi-per-status') ? document.getElementById('fi-per-status').value === '1' : false
+    }
+  };
+
+  if (editIdx >= 0) {
+    DB[editIdx] = d;
+    showToast('Processo atualizado', 'success');
+  } else if (window._previewEditUid) {
+    var el = document.getElementById(window._previewEditUid);
+    if (el) el.dataset.json = JSON.stringify(d);
+    showToast('Dados revisados — confirme para salvar', '');
+  } else {
+    DB.push(d);
+    showToast('Processo salvo!', 'success');
+  }
+  persist(); updateBadges(); closeModal();
+  if (document.getElementById('panel-list').classList.contains('active')) renderList();
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  editIdx = -1; window._previewEditUid = null;
+}
+
+function deleteProcess(i) {
+  if (!confirm('Remover este processo permanentemente?')) return;
+  var num = DB[i].numero || 'processo';
+  DB.splice(i, 1); persist(); updateBadges(); renderList();
+  showToast(num + ' removido', '');
+}
+
+/* ─── List ─── */
+function renderList() {
+  var q = ((document.getElementById('search-input')||{}).value||'').toLowerCase().trim();
+  var fase = ((document.getElementById('filter-fase')||{}).value||'');
+  var rows = DB.filter(function(p,i){
+    var match = !q || (p.numero+' '+p.reclamante+' '+p.reclamada+' '+p.vara).toLowerCase().indexOf(q) >= 0;
+    var fMatch = !fase || p.fase === fase;
+    return match && fMatch;
+  });
+
+  var body = document.getElementById('list-body');
+  if (!rows.length) {
+    body.innerHTML = '<div class="empty-state">'
+      + '<svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>'
+      + '<div class="empty-title">' + (q || fase ? 'Nenhum resultado' : 'Nenhum processo cadastrado') + '</div>'
+      + '<div class="empty-sub">' + (q || fase ? 'Tente outros termos' : 'Importe um PDF ou adicione manualmente') + '</div>'
+      + '</div>';
+    return;
+  }
+
+  var html = '<div class="table-wrap"><table><thead><tr>'
+    + '<th>Número</th><th>Partes</th><th>Fase</th><th>Próxima audiência</th><th>Perícia</th><th></th>'
+    + '</tr></thead><tbody>';
+
+  rows.forEach(function(p) {
+    var ri = DB.indexOf(p);
+    var a = p.audiencias && p.audiencias[0] ? p.audiencias[0] : {};
+    var audTxt = a.data ? (a.data + (a.hora ? ' às ' + a.hora : '')) : '—';
+    html += '<tr>'
+      + '<td><span class="mono">' + (p.numero || '—') + '</span>' + (p.vara ? '<br><span style="font-size:11px;color:var(--ink3)">'+p.vara+'</span>':'') + '</td>'
+      + '<td><span style="font-weight:500">' + (p.reclamante || '—') + '</span>'
+      + '<br><span style="font-size:12px;color:var(--ink2)">' + (p.reclamada || '—') + '</span></td>'
+      + '<td><span class="badge fase-' + p.fase + '">' + p.fase + '</span></td>'
+      + '<td style="font-size:12px"><span class="mono" style="font-size:12px">' + audTxt + '</span>'
+      + (a.data ? '<br><span class="badge ' + (a.virtual ? 'badge-blue' : 'badge-green') + '" style="margin-top:3px">' + (a.virtual ? 'Virtual' : 'Presencial') + '</span>' : '')
+      + '</td>'
+      + '<td>' + (p.pericia && p.pericia.existe
+          ? '<span class="badge ' + (p.pericia.realizada ? 'badge-green' : 'badge-purple') + '">' + (p.pericia.realizada ? 'Realizada' : 'Agendada') + '</span>'
+          : '<span style="color:var(--ink3);font-size:12px">—</span>') + '</td>'
+      + '<td><div style="display:flex;gap:4px">'
+      + '<button class="btn btn-ghost btn-sm" onclick="editProcess(' + ri + ')" title="Editar"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/></svg></button>'
+      + '<button class="btn btn-ghost btn-sm btn-danger" onclick="deleteProcess(' + ri + ')" title="Remover"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916"/></svg></button>'
+      + '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  body.innerHTML = html;
+}
+
+/* ─── Dashboard ─── */
+function renderDashboard() {
+  var today = new Date(); today.setHours(0,0,0,0);
+  document.getElementById('m-total').textContent = DB.length;
+  document.getElementById('m-aud').textContent = DB.filter(function(p){
+    return p.audiencias && p.audiencias.some(function(a){ return a.data && parseDate(a.data) >= today; });
+  }).length;
+  document.getElementById('m-per').textContent = DB.filter(function(p){ return p.pericia && p.pericia.existe && !p.pericia.realizada; }).length;
+  document.getElementById('m-rec').textContent = DB.filter(function(p){ return p.fase === 'Recurso'; }).length;
+
+  /* Fase chart */
+  var faseC = {}; DB.forEach(function(p){ faseC[p.fase]=(faseC[p.fase]||0)+1; });
+  var fColors = {'Inicial':'#6b7280','Instrução':'#1a4fd6','Sentença':'#166534','Recurso':'#92400e','Execução':'#991b1b'};
+  makeChart('cFase','doughnut',Object.keys(faseC),Object.values(faseC),Object.keys(faseC).map(function(k){return fColors[k]||'#6b7280';}));
+
+  /* Empresa chart */
+  var empC = {};
+  DB.forEach(function(p){
+    var n = (p.reclamada||'Não informado').substring(0,24);
+    (p.audiencias||[]).forEach(function(a){ if(a.data) empC[n]=(empC[n]||0)+1; });
+  });
+  var ks = Object.keys(empC).sort(function(a,b){return empC[b]-empC[a];}).slice(0,7);
+  makeChart('cEmpresa','bar',ks,ks.map(function(k){return empC[k];}),ks.map(function(_,i){return ['#1a4fd6','#166534','#92400e','#6b7280','#4f1d96','#991b1b','#065f46'][i%7];}));
+
+  /* Mês chart */
+  var mesC = {};
+  DB.forEach(function(p){
+    (p.audiencias||[]).forEach(function(a){
+      if(a.data){ var pts=a.data.split('/'); if(pts.length===3){ var k=pts[2]+'-'+pts[1]; mesC[k]=(mesC[k]||0)+1; } }
+    });
+  });
+  var mks = Object.keys(mesC).sort();
+  var mns = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var mlabels = mks.map(function(k){ var p=k.split('-'); return mns[+p[1]-1]+'/'+p[0].slice(2); });
+  makeChart('cMes','bar',mlabels,mks.map(function(k){return mesC[k];}),mks.map(function(){return '#1a4fd6';}));
+}
+
+function makeChart(id, type, labels, data, colors) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  var ctx = document.getElementById(id); if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: type,
+    data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, hoverOffset: 3, borderRadius: type==='bar'?4:0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: type==='doughnut', position:'right', labels:{ boxWidth:10, font:{size:11}, padding:12 } },
+        tooltip: { callbacks: { label: function(c){ return '  '+(c.parsed.y !== undefined ? c.parsed.y : c.parsed)+' registro(s)'; } } }
+      },
+      scales: type !== 'doughnut' ? {
+        y: { beginAtZero:true, ticks:{ stepSize:1, font:{size:11} }, grid:{ color:'rgba(128,128,128,.1)' }, border:{dash:[3,3]} },
+        x: { ticks:{ font:{size:11}, maxRotation:38, autoSkip: labels.length > 8 }, grid:{ display:false } }
+      } : {}
+    }
+  });
+}
+
+/* ─── Agenda ─── */
+function parseDate(s) {
+  var p = s ? s.split('/') : [];
+  return p.length === 3 ? new Date(+p[2], +p[1]-1, +p[0]) : new Date(0);
+}
+
+function renderAgenda() {
+  var flt = (document.getElementById('agenda-filter')||{}).value || '';
+  var today = new Date(); today.setHours(0,0,0,0);
+  var items = [];
+
+  DB.forEach(function(p) {
+    (p.audiencias||[]).forEach(function(a) {
+      if (!a.data) return;
+      if (flt === 'per') return;
+      if (flt === 'fut' && parseDate(a.data) < today) return;
+      items.push({ kind:'aud', data:a.data, hora:a.hora, label:a.tipo, virtual:a.virtual,
+        num:p.numero, rec:p.reclamante, red:p.reclamada, fase:p.fase });
+    });
+    if (p.pericia && p.pericia.existe && p.pericia.data) {
+      if (flt === 'aud') return;
+      if (flt === 'fut' && parseDate(p.pericia.data) < today) return;
+      items.push({ kind:'per', data:p.pericia.data, hora:p.pericia.hora, label:'Perícia técnica',
+        perito:p.pericia.perito, local:p.pericia.local, realizada:p.pericia.realizada,
+        num:p.numero, rec:p.reclamante, red:p.reclamada });
+    }
+  });
+
+  items.sort(function(a,b){ return parseDate(a.data) - parseDate(b.data); });
+
+  var body = document.getElementById('agenda-body');
+  if (!items.length) {
+    body.innerHTML = '<div class="empty-state">'
+      + '<svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>'
+      + '<div class="empty-title">Nenhum evento encontrado</div><div class="empty-sub">Ajuste o filtro ou importe mais processos</div></div>';
+    return;
+  }
+
+  var html = '';
+  var lastLabel = null;
+
+  items.forEach(function(ev) {
+    var dt = parseDate(ev.data);
+    var past = dt < today;
+    var isToday = dt.getTime() === today.getTime();
+
+    var dayLabel = isToday ? '— Hoje' : past ? '— Passado' : '';
+    var section = ev.data + (isToday ? '_today' : past ? '_past' : '');
+    if (section !== lastLabel) {
+      lastLabel = section;
+      html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);margin:'+(html?'20px':'0')+'px 0 8px 2px">'
+        + '<span class="mono" style="font-size:11px">' + ev.data + '</span>'
+        + (isToday ? ' <span style="color:var(--ok)">● Hoje</span>' : past ? ' <span style="opacity:.6">passado</span>' : '')
+        + '</div>';
+    }
+
+    html += '<div class="schedule-item' + (past ? ' past' : '') + '">'
+      + '<div class="schedule-dot ' + ev.kind + '" style="margin-top:6px"></div>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
+      + '<div>'
+      + '<div style="font-size:13px;font-weight:500">' + ev.label + '</div>'
+      + '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;margin-top:2px">' + (ev.num||'—') + '</div>'
+      + '</div>'
+      + '<div style="text-align:right;flex-shrink:0">'
+      + '<div style="font-family:\'IBM Plex Mono\',monospace;font-weight:500;font-size:13px">' + (ev.hora||'—') + '</div>'
+      + (ev.kind==='aud' ? '<span class="badge '+(ev.virtual?'badge-blue':'badge-green')+'" style="margin-top:3px">'+(ev.virtual?'Virtual':'Presencial')+'</span>' : '')
+      + (ev.kind==='per' && ev.realizada ? '<span class="badge badge-green" style="margin-top:3px">Realizada</span>' : '')
+      + (ev.kind==='per' && !ev.realizada ? '<span class="badge badge-purple" style="margin-top:3px">Pendente</span>' : '')
+      + '</div></div>'
+      + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--ink2)">'
+      + '<span>' + (ev.rec||'—') + '</span>'
+      + '<span style="color:var(--ink3)">×</span>'
+      + '<span>' + (ev.red||'—') + '</span>'
+      + (ev.local ? '<span style="color:var(--ink3)">📍 '+ev.local+'</span>' : '')
+      + (ev.perito ? '<span style="color:var(--ink3)">Perito: '+ev.perito+'</span>' : '')
+      + '</div>'
+      + '</div></div>';
+  });
+
+  body.innerHTML = html;
+}
+
+/* ─── Excel export ─── */
+function exportExcel() {
+  if (!DB.length) { showToast('Nenhum processo para exportar', 'error'); return; }
+  var wb = XLSX.utils.book_new();
+
+  var r1 = DB.map(function(p) {
+    var a = p.audiencias&&p.audiencias[0]||{};
+    return {
+      'Número':p.numero||'','Reclamante':p.reclamante||'','Reclamada':p.reclamada||'','Vara':p.vara||'','Fase':p.fase||'',
+      'Data Audiência':a.data||'','Hora':a.hora||'','Tipo':a.tipo||'','Formato':a.virtual?'Virtual':'Presencial',
+      'Perícia':p.pericia&&p.pericia.existe?'Sim':'Não',
+      'Data Perícia':p.pericia&&p.pericia.data||'','Hora Perícia':p.pericia&&p.pericia.hora||'',
+      'Perito':p.pericia&&p.pericia.perito||'','Local Perícia':p.pericia&&p.pericia.local||'',
+      'Status Perícia':p.pericia&&p.pericia.realizada?'Realizada':p.pericia&&p.pericia.existe?'Pendente':'—'
+    };
+  });
+  var ws1 = XLSX.utils.json_to_sheet(r1);
+  ws1['!cols'] = [{wch:26},{wch:28},{wch:28},{wch:22},{wch:12},{wch:14},{wch:8},{wch:26},{wch:12},{wch:8},{wch:14},{wch:8},{wch:24},{wch:22},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Processos');
+
+  var r2 = [];
+  DB.forEach(function(p){ (p.audiencias||[]).forEach(function(a){ if(a.data) r2.push({'Processo':p.numero,'Reclamante':p.reclamante,'Reclamada':p.reclamada,'Fase':p.fase,'Data':a.data,'Hora':a.hora,'Tipo':a.tipo,'Formato':a.virtual?'Virtual':'Presencial'}); }); });
+  if (r2.length) { XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r2), 'Audiências'); }
+
+  var r3 = DB.filter(function(p){return p.pericia&&p.pericia.existe;}).map(function(p){return {'Processo':p.numero,'Reclamante':p.reclamante,'Reclamada':p.reclamada,'Perito':p.pericia.perito||'','Data':p.pericia.data||'','Hora':p.pericia.hora||'','Local':p.pericia.local||'','Status':p.pericia.realizada?'Realizada':'Pendente'};});
+  if (r3.length) { XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r3), 'Perícias'); }
+
+  XLSX.writeFile(wb, 'processos_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  showToast('Planilha exportada!', 'success');
+}
+
+/* ─── Init ─── */
+updateBadges();
+if (DB.length > 0) renderList();
+</script>
+</body>
+</html>

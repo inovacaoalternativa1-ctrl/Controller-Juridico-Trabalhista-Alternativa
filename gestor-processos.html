@@ -437,7 +437,11 @@ tbody tr:hover td { background: var(--paper2); }
       </button>
     </nav>
     <div class="sidebar-footer">
-      <p>v2.0 — dados locais</p>
+      <p id="cloud-status" style="font-size:11px;padding:4px 10px;color:var(--ink3)">⟳ Conectando…</p>
+      <button class="btn btn-ghost btn-sm" onclick="syncCloud()" style="width:100%;justify-content:flex-start;padding:4px 10px;font-size:11px;color:var(--ink3)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:12px;height:12px"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+        Sincronizar
+      </button>
     </div>
   </aside>
 
@@ -641,14 +645,77 @@ if (typeof pdfjsLib !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
+/* ─── Config Google Sheets ─── */
+var API_URL = 'https://script.google.com/macros/s/AKfycbyia_Lr4HtBzpS2GFCnHxZisyGmVET4aYBHrpiWPJalDA0uqL4afLn4xKg1nPp-ZbJt/exec';
+
 /* ─── State ─── */
 var DB = [];
 var editIdx = -1;
 var charts = {};
 var pageTitles = { import:'Importar processo', list:'Processos', dashboard:'Dashboard', agenda:'Agenda' };
+var _saving = false;
 
-try { DB = JSON.parse(localStorage.getItem('lx2_db') || '[]'); } catch(e) { DB = []; }
-function persist() { try { localStorage.setItem('lx2_db', JSON.stringify(DB)); } catch(e){} }
+/* ─── Google Sheets API ─── */
+function apiGet(action, params) {
+  params = params || {};
+  var url = API_URL + '?action=' + action;
+  Object.keys(params).forEach(function(k){ url += '&' + k + '=' + encodeURIComponent(params[k]); });
+  return fetch(url).then(function(r){ return r.json(); });
+}
+
+function apiPost(action, body) {
+  return fetch(API_URL + '?action=' + action, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  }).then(function(r){ return r.json(); });
+}
+
+/* Carrega todos os processos do Sheets */
+function loadFromCloud() {
+  setCloudStatus('loading');
+  return apiGet('list').then(function(res) {
+    if (res.ok) {
+      DB = res.data || [];
+      setCloudStatus('ok');
+    } else {
+      setCloudStatus('error', res.error);
+    }
+    return DB;
+  }).catch(function(err) {
+    setCloudStatus('error', 'Sem conexão');
+    return DB;
+  });
+}
+
+/* Salva ou atualiza um processo no Sheets */
+function persist(proc) {
+  if (!proc) return Promise.resolve();
+  return apiPost('save', proc).then(function(res) {
+    if (!res.ok) showToast('Erro ao salvar: ' + res.error, 'error');
+    return res;
+  });
+}
+
+/* Remove processo do Sheets */
+function persistDelete(numero) {
+  return apiGet('delete', { numero: numero }).then(function(res) {
+    if (!res.ok) showToast('Erro ao remover: ' + res.error, 'error');
+    return res;
+  });
+}
+
+/* Indicador de status de conexão na sidebar */
+function setCloudStatus(state, msg) {
+  var el = document.getElementById('cloud-status');
+  if (!el) return;
+  if (state === 'loading') {
+    el.innerHTML = '<span style="color:var(--warn)">⟳ Sincronizando…</span>';
+  } else if (state === 'ok') {
+    el.innerHTML = '<span style="color:var(--ok)">● Online — ' + DB.length + ' processos</span>';
+  } else {
+    el.innerHTML = '<span style="color:var(--danger)">✕ ' + (msg||'Erro') + '</span>';
+  }
+}
 
 /* ─── Toast ─── */
 function showToast(msg, type) {
@@ -734,16 +801,36 @@ function updateBatchActions() {
 
 function saveAllPreviews() {
   var previews = document.getElementById('preview-area').querySelectorAll('.preview-card');
-  var count = 0;
+  var toSave = [];
+
   previews.forEach(function(el) {
     try {
       var d = JSON.parse(el.dataset.json);
-      DB.push(d); count++;
+      if (!d.numero) return;
+      /* Remove duplicata local */
+      var ex = DB.findIndex(function(p){ return p.numero === d.numero; });
+      if (ex >= 0) DB.splice(ex, 1);
+      DB.push(d);
+      toSave.push(d);
       el.remove();
     } catch(e) {}
   });
-  persist(); updateBadges(); updateBatchActions();
-  showToast(count + ' processo' + (count > 1 ? 's salvos' : ' salvo') + '!', 'success');
+
+  updateBadges(); updateBatchActions();
+  if (!toSave.length) { showToast('Nenhum processo válido para salvar', 'error'); return; }
+
+  showToast('Salvando ' + toSave.length + ' processo(s)…', '');
+
+  /* Salva um por um na nuvem em sequência */
+  var chain = Promise.resolve();
+  toSave.forEach(function(d) {
+    chain = chain.then(function() { return persist(d); });
+  });
+  chain.then(function() {
+    showToast(toSave.length + ' processo(s) salvos na nuvem!', 'success');
+    setCloudStatus('ok');
+    renderList();
+  });
 }
 
 function discardAllPreviews() {
@@ -889,38 +976,111 @@ function parseProcess(text, filename) {
     d.fase = 'Inicial';
   }
 
-  /* Audiências — regex mais preciso sobre o texto real do PDF */
+    /* ── AUDIÊNCIAS ── extrai TODAS as datas agendadas no processo ──
+     Usa 4 padrões complementares para garantir que nenhuma data escape,
+     incluindo redesignações, despachos avulsos e formatos variados do PJe */
   var audSeen = new Set();
-  var reAud = /audi[eê]ncia[^.]{0,180}?(\d{2}\/\d{2}\/\d{4})[^.]{0,60}?(\d{1,2}:\d{2})/gi;
+
+  function classifyAud(ctx) {
+    var c = ctx.toLowerCase();
+    if (/concilia/i.test(c))       return 'Audiência de conciliação';
+    if (/instru/i.test(c))         return 'Audiência de instrução';
+    if (/una/i.test(c))        return 'Audiência una';
+    if (/julgamento/i.test(c))     return 'Audiência de julgamento';
+    if (/inicial/i.test(c))        return 'Audiência inicial';
+    if (/redesignad/i.test(c))     return 'Audiência redesignada';
+    return 'Audiência';
+  }
+
+  function isVirtual(ctx) {
+    return /virtual|telepresencial|videoconfer[êe]ncia|zoom|meet\.google|sala_\d|por\s+videoconfer/i.test(ctx);
+  }
+
+  function addAud(data, hora, ctx, matchPos) {
+    var key = data + '_' + hora;
+    if (audSeen.has(key)) return;
+
+    /* Bloqueia se a assinatura eletrônica aparece ANTES da data no contexto
+       → significa que é timestamp de rodapé, não data de audiência */
+    if (matchPos !== undefined) {
+      var before = ctx.substring(0, matchPos);
+      if (/assinado\s+eletronicamente|documento\s+assinado/i.test(before)) return;
+    }
+
+    /* Bloqueia horários que são claramente de assinatura: padrão HH:MM:SS */
+    if (/^\d{2}:\d{2}:\d{2}$/.test(hora + ':00') && hora.split(':').length === 3) return;
+
+    /* Bloqueia se a hora está colada num hash de documento (ex: "19:18:26 - 1cec03a") */
+    var afterHora = ctx.substring((matchPos||0) + 16, (matchPos||0) + 40);
+    if (/:\d{2}\s*-\s*[a-f0-9]{6,}/i.test(afterHora)) return;
+
+    /* Bloqueia se o contexto imediato (50 chars antes) é claramente rodapé */
+    var immBefore = ctx.substring(Math.max(0,(matchPos||0)-50), matchPos||0);
+    if (/pjekz\/valida|instancia=|n[uú]mero\s+do\s+document/i.test(immBefore)) return;
+
+    audSeen.add(key);
+    d.audiencias.push({ data: data, hora: hora, tipo: classifyAud(ctx), virtual: isVirtual(ctx) });
+  }
+
   var hit;
-  while ((hit = reAud.exec(text)) !== null) {
-    var key = hit[1] + '_' + hit[2];
-    if (!audSeen.has(key)) {
-      audSeen.add(key);
-      var ctx = text.substring(Math.max(0, hit.index - 150), hit.index + 200).toLowerCase();
-      var tipo = 'Audiência';
-      if (/concilia/i.test(ctx))               tipo = 'Audiência de conciliação';
-      else if (/instru/i.test(ctx))            tipo = 'Audiência de instrução';
-      else if (/inicial/i.test(ctx))           tipo = 'Audiência inicial';
-      else if (/\buna\b/i.test(ctx))           tipo = 'Audiência una';
-      else if (/julgamento/i.test(ctx))        tipo = 'Audiência de julgamento';
-      var virtual = /virtual|telepresencial|zoom|meet\.google/i.test(ctx);
-      d.audiencias.push({ data: hit[1], hora: hit[2], tipo: tipo, virtual: virtual });
+
+  /* P1 — "audiência" seguida de data+hora na mesma linha/parágrafo */
+  var re1 = /audi[eê]ncia[^\n]{0,300}?(\d{2}\/\d{2}\/\d{4})[^\n]{0,100}?(\d{1,2}:\d{2})/gi;
+  while ((hit = re1.exec(text)) !== null) {
+    /* Bloqueia se "assinado eletronicamente" aparece ENTRE "audiência" e a data encontrada
+       (significa que o match atravessou o rodapé de assinatura) */
+    var datePos = text.indexOf(hit[1], hit.index);
+    var between = text.substring(hit.index, datePos);
+    if (/assinado\s+eletronicamente|documento\s+assinado/i.test(between)) continue;
+    var ctx1 = text.substring(Math.max(0,hit.index-150), hit.index+350);
+    addAud(hit[1], hit[2], ctx1, 150);
+  }
+
+  /* P2 — data+hora colados: "15/05/2026 09:00" ou "15/05/2026 09:00h" */
+  var re2 = /(\d{2}\/\d{2}\/\d{4})\s+(\d{1,2}:\d{2})\s*(?:h(?:oras?)?)?/gi;
+  while ((hit = re2.exec(text)) !== null) {
+    var ctx2start = Math.max(0,hit.index-400);
+    var ctx2 = text.substring(ctx2start, hit.index+400);
+    var posInCtx2 = hit.index - ctx2start;
+    /* Aceita se o parágrafo menciona alguma dessas palavras-chave */
+    if (/audi[eê]ncia|designad|redesignad|pauta|instru[çc]|concilia|julgamento|videoconfer|telepresencial|sala_|sess[ãa]o/i.test(ctx2)) {
+      addAud(hit[1], hit[2], ctx2, posInCtx2);
     }
   }
+
+  /* P3 — "para o dia DD/MM/AAAA, às HH:MM" e variações */
+  var re3 = /(?:para\s+o\s+dia|data\s+de|em)\s+(\d{2}\/\d{2}\/\d{4})[^\n]{0,80}?[àa]s?\s*(\d{1,2}:\d{2})/gi;
+  while ((hit = re3.exec(text)) !== null) {
+    addAud(hit[1], hit[2], text.substring(Math.max(0,hit.index-200), hit.index+300), 200);
+  }
+
+  /* P4 — data ... "às HH:MM horas" em até 80 chars — pega formatos como "27/06/2025 10:30 horas" */
+  var re4 = /(\d{2}\/\d{2}\/\d{4})[^\n]{0,80}[àa]s?\s*(\d{1,2}:\d{2})\s*horas?/gi;
+  while ((hit = re4.exec(text)) !== null) {
+    addAud(hit[1], hit[2], text.substring(Math.max(0,hit.index-200), hit.index+200), 200);
+  }
+
+  /* Ordena por data crescente */
+  d.audiencias.sort(function(a,b){
+    var pa=a.data.split('/'), pb=b.data.split('/');
+    return new Date(+pa[2],+pa[1]-1,+pa[0]) - new Date(+pb[2],+pb[1]-1,+pb[0]);
+  });
 
   /* Perícia */
   if (/per[íi]cia|ADICIONAL DE INSALUBRIDADE/i.test(text)) {
     d.pericia.existe = true;
-    /* Se laudo já existe → realizada */
-    if (/laudo pericial|laudo sob ID|esclarecimentos ao laudo/i.test(text)) d.pericia.realizada = true;
-    /* Data/hora da realização */
-    var pm = text.match(/(\d{2}\/\d{2}\/\d{4})[^;\n]{0,30}(?:[\u00e0a]s?)\s*(\d{2}:\d{2})[^;\n]{0,80}(?:per[íi]cia|perit)/i)
-           || text.match(/(?:per[íi]cia|perit)[^;\n]{0,80}(\d{2}\/\d{2}\/\d{4})/i);
-    if (pm) { d.pericia.data = pm[1]; if (pm[2]) d.pericia.hora = pm[2]; }
-    /* Perito */
-    var pp = text.match(/cargo d[oa][^.]{0,30}Dr[^\s.]{0,5}[.\s]+([A-ZÁÉÍÓÚ][a-záéíóúâêôãõç]+(?:\s[A-ZÁÉÍÓÚ][a-záéíóúâêôãõç]+){1,5})/);
+    /* Realizada se há laudo entregue OU esclarecimentos periciais nos autos */
+    if (/laudo\s+pericial\s+sob\s+ID|laudo\s+sob\s+ID|apresentado\s+o\s+laudo|esclarecimentos\s+(?:ao\s+laudo|periciais?\s+de\s+#id|periciais?\s+sob)|#id:[a-f0-9]+.*?(?:perit|laudo)|(?:perit|laudo).*?#id:[a-f0-9]+/i.test(text)) {
+      d.pericia.realizada = true;
+    }
+    /* Perito nomeado */
+    var pp = text.match(/[Nn]omeio[^.]{0,60}perit[oa][^.]{0,10}([A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚa-záéíóúâêôãõç]+(?:\s[A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚa-záéíóúâêôãõç]+){1,5})/);
+    if (!pp) pp = text.match(/PERITO[:\s]+([A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚa-záéíóúâêôãõç]+(?:\s[A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚa-záéíóúâêôãõç]+){1,5})/);
     if (pp) d.pericia.perito = pp[1].trim();
+    /* Data de realização — quando o perito fez a vistoria */
+    var pm = text.match(/(?:vis[íi]ta|vistoria|reali[zs]ou)[^.\n]{0,60}(\d{2}\/\d{2}\/\d{4})/i)
+           || text.match(/(\d{2}\/\d{2}\/\d{4})[^.\n]{0,40}(?:vis[íi]ta|vistoria\s+pericial)/i);
+    if (pm) { d.pericia.data = pm[1]; }
     /* Local */
     var pl = text.match(/local(?:[^.\n]{0,20}per[íi]cia)[^.\n]{0,80}([A-ZÁÉÍÓÚ][a-záéíóúâêôãõçA-Z]+(?:[,\s][A-Za-záéíóúâêôãõç]+){1,6})/i);
     if (pl) d.pericia.local = pl[1].trim();
@@ -992,10 +1152,30 @@ function confirmPreview(uid) {
   var el = document.getElementById(uid);
   if (!el) return;
   var d = JSON.parse(el.dataset.json);
-  DB.push(d); persist(); updateBadges();
+  if (!d.numero) { showToast('Processo sem número — revise antes de salvar', 'error'); return; }
+
+  /* Evita duplicata: se número já existe, pergunta antes de sobrescrever */
+  var existing = DB.findIndex(function(p){ return p.numero === d.numero; });
+  if (existing >= 0) {
+    if (!confirm('O processo ' + d.numero + ' já está cadastrado.\nDeseja substituir pelo novo?')) {
+      el.remove(); updateBatchActions(); return;
+    }
+    DB.splice(existing, 1);
+  }
+
+  DB.push(d);
+  updateBadges();
   el.remove();
   updateBatchActions();
-  showToast('Processo ' + (d.numero || 'adicionado') + ' salvo!', 'success');
+
+  /* Salva na nuvem */
+  showToast('Salvando ' + d.numero + '…', '');
+  persist(d).then(function(res) {
+    if (res && res.ok) {
+      showToast('Processo ' + d.numero + ' salvo!', 'success');
+    }
+    renderList();
+  });
 }
 
 function editPreview(uid) {
@@ -1092,17 +1272,30 @@ function saveModal() {
 
   if (editIdx >= 0) {
     DB[editIdx] = d;
-    showToast('Processo atualizado', 'success');
+    closeModal(); updateBadges();
+    showToast('Salvando…', '');
+    persist(d).then(function(res) {
+      showToast(res && res.ok ? 'Processo atualizado!' : 'Erro ao salvar', res && res.ok ? 'success' : 'error');
+      renderList();
+    });
   } else if (window._previewEditUid) {
     var el = document.getElementById(window._previewEditUid);
     if (el) el.dataset.json = JSON.stringify(d);
+    closeModal();
     showToast('Dados revisados — confirme para salvar', '');
   } else {
+    if (d.numero) {
+      var ex2 = DB.findIndex(function(p){ return p.numero === d.numero; });
+      if (ex2 >= 0) DB.splice(ex2, 1);
+    }
     DB.push(d);
-    showToast('Processo salvo!', 'success');
+    closeModal(); updateBadges();
+    showToast('Salvando…', '');
+    persist(d).then(function(res) {
+      showToast(res && res.ok ? 'Processo salvo!' : 'Erro ao salvar', res && res.ok ? 'success' : 'error');
+      renderList();
+    });
   }
-  persist(); updateBadges(); closeModal();
-  if (document.getElementById('panel-list').classList.contains('active')) renderList();
 }
 
 function closeModal() {
@@ -1112,9 +1305,13 @@ function closeModal() {
 
 function deleteProcess(i) {
   if (!confirm('Remover este processo permanentemente?')) return;
-  var num = DB[i].numero || 'processo';
-  DB.splice(i, 1); persist(); updateBadges(); renderList();
-  showToast(num + ' removido', '');
+  var proc = DB[i];
+  var num = proc.numero || '';
+  DB.splice(i, 1); updateBadges(); renderList();
+  showToast('Removendo…', '');
+  persistDelete(num).then(function(res) {
+    showToast(num + (res && res.ok ? ' removido' : ' — erro ao remover da nuvem'), res && res.ok ? '' : 'error');
+  });
 }
 
 /* ─── List ─── */
@@ -1138,28 +1335,76 @@ function renderList() {
   }
 
   var html = '<div class="table-wrap"><table><thead><tr>'
-    + '<th>Número</th><th>Partes</th><th>Fase</th><th>Próxima audiência</th><th>Perícia</th><th></th>'
+    + '<th>Número / Vara</th><th>Partes</th><th>Fase</th><th>Audiência</th><th>Perícia</th><th></th>'
     + '</tr></thead><tbody>';
 
   rows.forEach(function(p) {
     var ri = DB.indexOf(p);
-    var a = p.audiencias && p.audiencias[0] ? p.audiencias[0] : {};
+    var today = new Date(); today.setHours(0,0,0,0);
+    var auds = p.audiencias || [];
+
+    /* Pega a próxima audiência futura; se não houver, pega a última (mais recente) */
+    var proxima = null;
+    for (var ai = 0; ai < auds.length; ai++) {
+      if (auds[ai].data && parseDate(auds[ai].data) >= today) { proxima = auds[ai]; break; }
+    }
+    if (!proxima && auds.length > 0) proxima = auds[auds.length - 1];
+    var a = proxima || {};
+
+    var isPast = a.data && parseDate(a.data) < today;
     var audTxt = a.data ? (a.data + (a.hora ? ' às ' + a.hora : '')) : '—';
-    html += '<tr>'
-      + '<td><span class="mono">' + (p.numero || '—') + '</span>' + (p.vara ? '<br><span style="font-size:11px;color:var(--ink3)">'+p.vara+'</span>':'') + '</td>'
+    var totalAuds = auds.filter(function(x){ return x.data; }).length;
+
+    var html_row = '<tr>'
+      + '<td><span class="mono">' + (p.numero || '—') + '</span>'
+      + (p.vara ? '<br><span style="font-size:11px;color:var(--ink3)">'+p.vara+'</span>' : '')
+      + '</td>'
       + '<td><span style="font-weight:500">' + (p.reclamante || '—') + '</span>'
       + '<br><span style="font-size:12px;color:var(--ink2)">' + (p.reclamada || '—') + '</span></td>'
-      + '<td><span class="badge fase-' + p.fase + '">' + p.fase + '</span></td>'
-      + '<td style="font-size:12px"><span class="mono" style="font-size:12px">' + audTxt + '</span>'
-      + (a.data ? '<br><span class="badge ' + (a.virtual ? 'badge-blue' : 'badge-green') + '" style="margin-top:3px">' + (a.virtual ? 'Virtual' : 'Presencial') + '</span>' : '')
-      + '</td>'
-      + '<td>' + (p.pericia && p.pericia.existe
-          ? '<span class="badge ' + (p.pericia.realizada ? 'badge-green' : 'badge-purple') + '">' + (p.pericia.realizada ? 'Realizada' : 'Agendada') + '</span>'
-          : '<span style="color:var(--ink3);font-size:12px">—</span>') + '</td>'
-      + '<td><div style="display:flex;gap:4px">'
+      + '<td><span class="badge fase-' + p.fase + '">' + p.fase + '</span></td>';
+
+    /* ── Coluna: Audiências ── */
+    if (!a.data) {
+      html_row += '<td><span style="color:var(--ink3)">—</span></td>';
+    } else {
+      /* Status da audiência exibida: passada = realizada, futura = agendada */
+      var audStatusBadge = isPast
+        ? '<span class="badge badge-green" style="font-size:10px">✓ Realizada</span>'
+        : '<span class="badge badge-blue"  style="font-size:10px">Agendada</span>';
+      html_row += '<td style="font-size:12px">'
+        + '<span class="mono" style="font-size:12px;' + (isPast ? 'color:var(--ink3)' : 'font-weight:500') + '">' + audTxt + '</span>'
+        + '<br><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">'
+        + audStatusBadge
+        + '<span class="badge ' + (a.virtual ? 'badge-blue' : 'badge-green') + '" style="font-size:10px">' + (a.virtual ? 'Virtual' : 'Presencial') + '</span>'
+        + (a.tipo ? '<span class="badge badge-gray" style="font-size:10px">' + a.tipo + '</span>' : '')
+        + (totalAuds > 1 ? '<span style="font-size:10px;color:var(--ink3);line-height:2">' + totalAuds + ' audiências</span>' : '')
+        + '</div>'
+        + '</td>';
+    }
+
+    /* ── Coluna: Perícia ── */
+    if (!p.pericia || !p.pericia.existe) {
+      html_row += '<td><span style="color:var(--ink3);font-size:12px">—</span></td>';
+    } else {
+      var perBadge = p.pericia.realizada
+        ? '<span class="badge badge-green">✓ Realizada</span>'
+        : '<span class="badge badge-purple">Pendente</span>';
+      var perData = '';
+      if (p.pericia.realizada && p.pericia.data)
+        perData = '<br><span style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace">em ' + p.pericia.data + '</span>';
+      else if (!p.pericia.realizada && p.pericia.data)
+        perData = '<br><span style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace">prev. ' + p.pericia.data + '</span>';
+      var perPerito = p.pericia.perito
+        ? '<br><span style="font-size:11px;color:var(--ink3)">Perito: ' + p.pericia.perito.split(' ').slice(0,2).join(' ') + '</span>'
+        : '';
+      html_row += '<td>' + perBadge + perData + perPerito + '</td>';
+    }
+
+    html_row += '<td><div style="display:flex;gap:4px">'
       + '<button class="btn btn-ghost btn-sm" onclick="editProcess(' + ri + ')" title="Editar"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/></svg></button>'
       + '<button class="btn btn-ghost btn-sm btn-danger" onclick="deleteProcess(' + ri + ')" title="Remover"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916"/></svg></button>'
       + '</div></td></tr>';
+    html += html_row;
   });
   html += '</tbody></table></div>';
   body.innerHTML = html;
@@ -1336,9 +1581,25 @@ function exportExcel() {
   showToast('Planilha exportada!', 'success');
 }
 
+/* ─── Sync manual ─── */
+function syncCloud() {
+  setCloudStatus('loading');
+  loadFromCloud().then(function() {
+    updateBadges();
+    renderList();
+    if (document.getElementById('panel-dashboard').classList.contains('active')) renderDashboard();
+    if (document.getElementById('panel-agenda').classList.contains('active')) renderAgenda();
+    showToast('Sincronizado com sucesso!', 'success');
+  });
+}
+
 /* ─── Init ─── */
-updateBadges();
-if (DB.length > 0) renderList();
+loadFromCloud().then(function() {
+  updateBadges();
+  renderList();
+  // Se a aba de lista estiver ativa, re-renderiza após carga
+  if (document.getElementById('panel-list').classList.contains('active')) renderList();
+});
 </script>
 </body>
 </html>

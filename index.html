@@ -857,12 +857,37 @@ function parseProcess(text, filename) {
   m = text.match(/(\d[ªº]\s+VARA DO TRABALHO[^\n\r]{0,40})/i);
   if (m) d.vara = m[1].trim();
 
-  /* Fase */
-  if (/CumPrSe|CUMPRIMENTO DE SENTEN|liquida\u00e7\u00e3o|homologa/i.test(text))            d.fase = 'Execução';
-  else if (/RECURSO ORDIN\u00c1RIO|contrarraz\u00f5es|E\.TRT|subam os autos ao E\.TRT/i.test(text)) d.fase = 'Recurso';
-  else if (/SENTEN\u00c7A|senten\u00e7a proferida|JULGAR PARCIALMENTE|JULGAR PROCEDENTE/i.test(text)) d.fase = 'Sentença';
-  else if (/per\u00edcia|laudo pericial|ADICIONAL DE INSALUBRIDADE|instru\u00e7\u00e3o/i.test(text))  d.fase = 'Instrução';
-  else d.fase = 'Inicial';
+  /* Fase — do mais avançado ao mais inicial */
+  // Execução: cumprimento de sentença em aberto
+  if (/CumPrSe\b|cumprimento\s+de\s+senten/i.test(text)) {
+    d.fase = 'Execução';
+  }
+  // Recurso: recurso ordinário já interposto / aguardando contrarrazões no TRT
+  else if (/recurso\s+ordin[áa]rio\s+(?:id|#id|interposto|tempestivo)|subam\s+os\s+autos\s+ao\s+E\.?\s*TRT|contrarraz[õo]es\s+no\s+oct[íi]dio/i.test(text)) {
+    d.fase = 'Recurso';
+  }
+  // Sentença: dispositivo presente na petição
+  else if (/JULGAR\s+PARCIALMENTE\s+PROCEDENTE|JULGAR\s+PROCEDENTE|JULGAR\s+IMPROCEDENTE|III[\s\.]+DISPOSITIVO|senten[çc]a\s+proferida|resolve\s+este\s+Ju[íi]zo/i.test(text)) {
+    d.fase = 'Sentença';
+  }
+  // Instrução: laudo entregue OU instrução encerrada OU perícia designada
+  else if (/laudo\s+pericial\s+sob\s+ID|encerrada\s+a\s+instru[çc][ãa]o|determina-se\s+a\s+realiza[çc][ãa]o\s+de\s+per[íi]cia|ADICIONAL\s+DE\s+INSALUBRIDADE/i.test(text)) {
+    d.fase = 'Instrução';
+  }
+  // Inicial: apenas despacho de autuação/notificação
+  else if (/audi[êe]ncia\s+INICIAL\s+designada|expe[çc]a-se\s+notifica[çc][ãa]o|notifica[çc][ãa]o\s+inicial\s+à\s+demandada/i.test(text)) {
+    d.fase = 'Inicial';
+  }
+  // Fallback por palavras-chave menos específicas
+  else if (/per[íi]cia/i.test(text)) {
+    d.fase = 'Instrução';
+  }
+  else if (/SENTEN[ÇC]A/i.test(text)) {
+    d.fase = 'Sentença';
+  }
+  else {
+    d.fase = 'Inicial';
+  }
 
   /* Audiências — regex mais preciso sobre o texto real do PDF */
   var audSeen = new Set();

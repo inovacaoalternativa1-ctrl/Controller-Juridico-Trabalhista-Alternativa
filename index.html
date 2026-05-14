@@ -924,6 +924,7 @@ function extractPdfText(file) {
 function parseProcess(text, filename) {
   var d = {
     numero: '', reclamante: '', reclamada: '', vara: '', fase: '',
+    instancia: '1º grau',
     audiencias: [],
     pericia: { existe: false, data: '', hora: '', local: '', perito: '', realizada: false }
   };
@@ -931,6 +932,15 @@ function parseProcess(text, filename) {
   /* Número */
   var m = text.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);
   if (m) d.numero = m[1];
+
+  /* Instância — detecta pelo conteúdo e pelo nome do arquivo */
+  var is2grau = /TRIBUNAL\s+REGIONAL\s+DO\s+TRABALHO|ACÓRDÃO|acórd[ãa]o|2[ºª]\s+grau|segunda\s+inst[âa]ncia|TURMA\s+DO\s+TRT|Relator[:\s]/i.test(text)
+             || /ROR|ROT|AP-|AP_|AIRR|_2grau/i.test(filename || '');
+  if (is2grau) {
+    d.instancia = '2º grau';
+    /* Chave única: número + instância para não sobrescrever o de 1º grau */
+    if (d.numero) d.numero = d.numero + ' (2º grau)';
+  }
 
   /* Reclamante */
   m = text.match(/RECLAMANTE[:\s]*([^\n\r]{3,60})(?:\n|\r|ADVOGADO|RECLAMADO)/i);
@@ -1127,6 +1137,7 @@ function appendPreview(data) {
     + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
     + '<span class="num-chip">' + (data.numero || 'número não encontrado') + '</span>'
     + '<span class="badge fase-' + data.fase + '">' + data.fase + '</span>'
+    + (data.instancia === '2º grau' ? '<span class="badge badge-amber">2º grau</span>' : '<span class="badge badge-gray" style="font-size:10px">1º grau</span>')
     + '</div>'
     + '<div style="font-size:13px;color:var(--ink2)">'
     + '<span style="font-weight:500">' + (data.reclamante || '—') + '</span>'
@@ -1209,6 +1220,10 @@ function openModalWith(d) {
     + '<div class="grid2"><div class="field"><label>Reclamante</label><input id="fi-rec" value="'+(d.reclamante||'')+'"></div>'
     + '<div class="field"><label>Reclamada (1ª ré)</label><input id="fi-red" value="'+(d.reclamada||'')+'"></div></div>'
     + '<div class="grid2"><div class="field"><label>Vara do trabalho</label><input id="fi-vara" value="'+(d.vara||'')+'" placeholder="1ª Vara do Trabalho de…"></div>'
+    + '<div class="field"><label>Instância</label><select id="fi-inst">'
+    + '<option value="1º grau"'+((!d.instancia||d.instancia==='1º grau')?' selected':'')+'>1º grau</option>'
+    + '<option value="2º grau"'+(d.instancia==='2º grau'?' selected':'')+'>2º grau (TRT)</option>'
+    + '</select></div></div>'
     + '<div class="field"><label>Fase processual</label><select id="fi-fase">'
     + fases.map(function(f){ return '<option'+(d.fase===f?' selected':'')+'>'+f+'</option>'; }).join('')
     + '</select></div></div>'
@@ -1253,6 +1268,7 @@ function saveModal() {
     reclamante:(document.getElementById('fi-rec').value||'').trim(),
     reclamada: (document.getElementById('fi-red').value||'').trim(),
     vara:      (document.getElementById('fi-vara').value||'').trim(),
+    instancia: document.getElementById('fi-inst') ? document.getElementById('fi-inst').value : '1º grau',
     fase:       document.getElementById('fi-fase').value,
     audiencias: [{
       data:    (document.getElementById('fi-aud-data').value||'').trim(),
@@ -1357,8 +1373,10 @@ function renderList() {
 
     var html_row = '<tr>'
       + '<td><span class="mono">' + (p.numero || '—') + '</span>'
-      + (p.vara ? '<br><span style="font-size:11px;color:var(--ink3)">'+p.vara+'</span>' : '')
-      + '</td>'
+      + '<br><div style="display:flex;gap:4px;margin-top:2px;flex-wrap:wrap">'
+      + (p.instancia === '2º grau' ? '<span class="badge badge-amber" style="font-size:10px">2º grau</span>' : '<span class="badge badge-gray" style="font-size:10px">1º grau</span>')
+      + (p.vara ? '<span style="font-size:11px;color:var(--ink3)">'+p.vara+'</span>' : '')
+      + '</div></td>'
       + '<td><span style="font-weight:500">' + (p.reclamante || '—') + '</span>'
       + '<br><span style="font-size:12px;color:var(--ink2)">' + (p.reclamada || '—') + '</span></td>'
       + '<td><span class="badge fase-' + p.fase + '">' + p.fase + '</span></td>';

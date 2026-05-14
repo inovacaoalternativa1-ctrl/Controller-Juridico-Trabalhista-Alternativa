@@ -925,6 +925,7 @@ function parseProcess(text, filename) {
   var d = {
     numero: '', reclamante: '', reclamada: '', vara: '', fase: '',
     instancia: '1º grau',
+    versao: '',
     audiencias: [],
     pericia: { existe: false, data: '', hora: '', local: '', perito: '', realizada: false }
   };
@@ -932,6 +933,22 @@ function parseProcess(text, filename) {
   /* Número */
   var m = text.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);
   if (m) d.numero = m[1];
+
+  /* Versão — extrai o número de versão do nome do arquivo
+     Ex: "ATSum_0000515_1grau (3).pdf"      → v3
+     Ex: "ATSum_0000055_1grau (7) (1).pdf"  → v7  (ignora o (1) final que é só cópia)
+     Ex: "ATSum_0000515_1grau (1) (1).pdf"  → v1
+     Ex: "ATSum_0000926_1grau (1).pdf"      → ''  (único (1) = marcador de cópia, sem versão)
+  */
+  var allParens = [];
+  var parenRe = /\((\d+)\)/g;
+  var parenM;
+  while ((parenM = parenRe.exec(filename || '')) !== null) allParens.push(parenM[1]);
+  if (allParens.length === 1 && allParens[0] === '1') {
+    d.versao = ''; // único "(1)" é só marcador de cópia, não é versão
+  } else if (allParens.length > 0) {
+    d.versao = 'v' + allParens[0]; // primeiro número entre parênteses é a versão
+  }
 
   /* Instância — detecta SOMENTE pelo nome do arquivo (confiável)
      Prefixos de 2º grau: ROR, ROT, AP, AIRR, RO, ED, AGR
@@ -941,7 +958,15 @@ function parseProcess(text, filename) {
              || /_2GRAU/i.test(filename || '');
   if (is2grau) {
     d.instancia = '2º grau';
-    if (d.numero) d.numero = d.numero + ' (2º grau)';
+  }
+
+  /* Chave única: número + instância + versão
+     Garante que PDFs diferentes do mesmo processo não se sobrescrevam */
+  if (d.numero) {
+    var sufixo = '';
+    if (is2grau)   sufixo += ' (2º grau)';
+    if (d.versao)  sufixo += ' ' + d.versao;
+    d.numero = d.numero + sufixo;
   }
 
   /* Reclamante */

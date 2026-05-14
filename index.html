@@ -933,12 +933,14 @@ function parseProcess(text, filename) {
   var m = text.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);
   if (m) d.numero = m[1];
 
-  /* Instância — detecta pelo conteúdo e pelo nome do arquivo */
-  var is2grau = /TRIBUNAL\s+REGIONAL\s+DO\s+TRABALHO|ACÓRDÃO|acórd[ãa]o|2[ºª]\s+grau|segunda\s+inst[âa]ncia|TURMA\s+DO\s+TRT|Relator[:\s]/i.test(text)
-             || /ROR|ROT|AP-|AP_|AIRR|_2grau/i.test(filename || '');
+  /* Instância — detecta SOMENTE pelo nome do arquivo (confiável)
+     Prefixos de 2º grau: ROR, ROT, AP, AIRR, RO, ED, AGR
+     Prefixos de 1º grau: ATOrd, ATSum, ATSumConv, etc. */
+  var fname = (filename || '').toUpperCase();
+  var is2grau = /^(ROR|ROT|RO[_\s-]|RORS|RORT|AP[_\s-]|AIRR|AGR|ED[_\s-])/.test(fname)
+             || /_2GRAU/i.test(filename || '');
   if (is2grau) {
     d.instancia = '2º grau';
-    /* Chave única: número + instância para não sobrescrever o de 1º grau */
     if (d.numero) d.numero = d.numero + ' (2º grau)';
   }
 

@@ -807,7 +807,6 @@ function saveAllPreviews() {
     try {
       var d = JSON.parse(el.dataset.json);
       if (!d.numero) return;
-      /* Remove duplicata local */
       var ex = DB.findIndex(function(p){ return p.numero === d.numero; });
       if (ex >= 0) DB.splice(ex, 1);
       DB.push(d);
@@ -819,18 +818,42 @@ function saveAllPreviews() {
   updateBadges(); updateBatchActions();
   if (!toSave.length) { showToast('Nenhum processo válido para salvar', 'error'); return; }
 
-  showToast('Salvando ' + toSave.length + ' processo(s)…', '');
+  /* Salva sequencialmente com 800ms de intervalo para não sobrecarregar o Apps Script */
+  var total = toSave.length;
+  var done = 0;
+  var errors = 0;
 
-  /* Salva um por um na nuvem em sequência */
-  var chain = Promise.resolve();
-  toSave.forEach(function(d) {
-    chain = chain.then(function() { return persist(d); });
-  });
-  chain.then(function() {
-    showToast(toSave.length + ' processo(s) salvos na nuvem!', 'success');
-    setCloudStatus('ok');
-    renderList();
-  });
+  /* Mostra barra de progresso durante o envio */
+  document.getElementById('batch-status').style.display = 'block';
+  document.getElementById('batch-spinner').style.display = '';
+  setProgress(0);
+
+  function salvarProximo(i) {
+    if (i >= total) {
+      setProgress(100);
+      document.getElementById('batch-spinner').style.display = 'none';
+      document.getElementById('batch-msg').textContent = done + ' de ' + total + ' salvos na nuvem' + (errors ? ' (' + errors + ' erros)' : '');
+      showToast(done + ' processo(s) salvos!', 'success');
+      setCloudStatus('ok');
+      renderList();
+      setTimeout(function(){ document.getElementById('batch-status').style.display = 'none'; setProgress(0); }, 3000);
+      return;
+    }
+    var p = toSave[i];
+    document.getElementById('batch-msg').textContent = 'Salvando ' + (i+1) + ' de ' + total + ': ' + p.numero;
+    setProgress(Math.round(((i+1)/total)*95));
+
+    persist(p).then(function(res) {
+      if (res && res.ok) done++;
+      else errors++;
+      setTimeout(function(){ salvarProximo(i+1); }, 700);
+    }).catch(function() {
+      errors++;
+      setTimeout(function(){ salvarProximo(i+1); }, 700);
+    });
+  }
+
+  salvarProximo(0);
 }
 
 function discardAllPreviews() {
